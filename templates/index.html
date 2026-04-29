@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>For You</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0a0a1a;
+  overflow: hidden;
+  font-family: 'Georgia', serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  cursor: pointer;
+}
+
+canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+.text-layer {
+  position: fixed;
+  z-index: 2;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.title {
+  font-size: clamp(28px, 6vw, 56px);
+  color: #ff6b9d;
+  text-shadow: 0 0 30px rgba(255, 107, 157, 0.6),
+               0 0 60px rgba(255, 107, 157, 0.3);
+  letter-spacing: 4px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.subtitle {
+  margin-top: 20px;
+  font-size: clamp(14px, 2.5vw, 22px);
+  color: rgba(255, 180, 200, 0.7);
+  letter-spacing: 2px;
+  animation: fadeIn 3s ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.85; }
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="text-layer">
+  <div class="title">I Love You</div>
+  <div class="subtitle">Click anywhere to spread love</div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, particles = [], hearts = [];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Heart shape parametric equation
+function heartX(t) { return 16 * Math.pow(Math.sin(t), 3); }
+function heartY(t) {
+  return -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+}
+
+class Particle {
+  constructor(x, y, color, vx, vy, size, life) {
+    this.x = x; this.y = y;
+    this.color = color;
+    this.vx = vx; this.vy = vy;
+    this.size = size;
+    this.life = life;
+    this.maxLife = life;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.02;
+    this.life--;
+  }
+  draw() {
+    const alpha = Math.max(0, this.life / this.maxLife);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  get dead() { return this.life <= 0; }
+}
+
+class FloatingHeart {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = H + 30;
+    this.size = Math.random() * 15 + 10;
+    this.speed = Math.random() * 1.5 + 0.5;
+    this.opacity = Math.random() * 0.4 + 0.1;
+    this.wobble = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = Math.random() * 0.02 + 0.01;
+    this.color = ['#ff6b9d','#ff8fab','#ffb3c6','#ff477e','#ff85a1'][Math.floor(Math.random()*5)];
+  }
+  update() {
+    this.y -= this.speed;
+    this.wobble += this.wobbleSpeed;
+    this.x += Math.sin(this.wobble) * 0.8;
+    if (this.y < -40) this.reset();
+  }
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.opacity;
+    ctx.fillStyle = this.color;
+    ctx.translate(this.x, this.y);
+    ctx.scale(this.size / 16, this.size / 16);
+    ctx.beginPath();
+    for (let t = 0; t < Math.PI * 2; t += 0.05) {
+      const x = heartX(t);
+      const y = heartY(t);
+      t === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// Main heart shape particles
+const mainHeartParticles = [];
+function createMainHeart() {
+  const cx = W / 2;
+  const cy = H / 2 - 20;
+  const scale = Math.min(W, H) / 55;
+  for (let t = 0; t < Math.PI * 2; t += 0.04) {
+    const x = cx + heartX(t) * scale;
+    const y = cy + heartY(t) * scale;
+    mainHeartParticles.push({ x, y, baseX: x, baseY: y, angle: t });
+  }
+  // Fill inside with dots
+  for (let i = 0; i < 300; i++) {
+    const t = Math.random() * Math.PI * 2;
+    const r = Math.random();
+    const x = cx + heartX(t) * scale * r;
+    const y = cy + heartY(t) * scale * r;
+    mainHeartParticles.push({ x, y, baseX: x, baseY: y, angle: t });
+  }
+}
+createMainHeart();
+
+// Floating hearts background
+for (let i = 0; i < 25; i++) {
+  const h = new FloatingHeart();
+  h.y = Math.random() * H;
+  hearts.push(h);
+}
+
+// Click burst
+document.addEventListener('click', (e) => {
+  const colors = ['#ff6b9d','#ff8fab','#ffb3c6','#ff477e','#ffd6e0','#fff0f3'];
+  for (let i = 0; i < 30; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 4 + 1;
+    particles.push(new Particle(
+      e.clientX, e.clientY,
+      colors[Math.floor(Math.random() * colors.length)],
+      Math.cos(angle) * speed,
+      Math.sin(angle) * speed - 2,
+      Math.random() * 4 + 2,
+      Math.floor(Math.random() * 60 + 40)
+    ));
+  }
+});
+
+let time = 0;
+function animate() {
+  ctx.fillStyle = 'rgba(10, 10, 26, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+  time += 0.016;
+
+  // Floating hearts
+  hearts.forEach(h => { h.update(); h.draw(); });
+
+  // Main heart shape
+  const breathe = 1 + Math.sin(time * 2) * 0.04;
+  ctx.save();
+  ctx.translate(W / 2, H / 2 - 20);
+  ctx.scale(breathe, breathe);
+  ctx.translate(-W / 2, -(H / 2 - 20));
+
+  mainHeartParticles.forEach(p => {
+    const wobble = Math.sin(time * 3 + p.angle * 3) * 2;
+    const alpha = 0.5 + Math.sin(time * 2 + p.angle) * 0.3;
+    ctx.beginPath();
+    ctx.arc(p.baseX + wobble, p.baseY + wobble * 0.5, 2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 107, 157, ${alpha})`;
+    ctx.fill();
+    // Glow
+    ctx.beginPath();
+    ctx.arc(p.baseX + wobble, p.baseY + wobble * 0.5, 5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 107, 157, ${alpha * 0.15})`;
+    ctx.fill();
+  });
+  ctx.restore();
+
+  // Click particles
+  particles = particles.filter(p => !p.dead);
+  particles.forEach(p => { p.update(); p.draw(); });
+
+  requestAnimationFrame(animate);
+}
+animate();
+
+// Rebuild main heart on resize
+window.addEventListener('resize', () => {
+  mainHeartParticles.length = 0;
+  createMainHeart();
+});
+</script>
+</body>
+</html>
